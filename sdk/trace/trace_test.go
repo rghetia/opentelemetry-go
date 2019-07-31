@@ -303,6 +303,65 @@ func TestUnregisterExporter(t *testing.T) {
 	}
 }
 
+func TestBucket(t *testing.T) {
+	// make a bucket of size 5 and add 10 spans
+	b := makeBucket(5)
+	for i := 1; i <= 10; i++ {
+		b.nextTime = time.Time{} // reset the time so that the next span is accepted.
+		// add a span, with i stored in the TraceID so we can test for it later.
+		traceId := tid
+		traceId.High = uint64(i)
+		b.add(&SpanData{SpanContext: core.SpanContext{TraceID: traceId}, EndTime: time.Now()})
+		if i <= 5 {
+			if b.size() != i {
+				t.Fatalf("got bucket size %d, want %d %#v\n", b.size(), i, b)
+			}
+			for j := 0; j < i; j++ {
+				want := uint64(j + 1)
+				got := b.span(j).SpanContext.TraceID.High
+				if got != want {
+					t.Errorf("got span index %d, want %d\n", got, want)
+				}
+			}
+		} else {
+			if b.size() != 5 {
+				t.Fatalf("got bucket size %d, want 5\n", b.size())
+			}
+			for j := 0; j < 5; j++ {
+				want := uint64(i - 4 + j)
+				got := b.span(j).SpanContext.TraceID.High
+				if got != want {
+					t.Errorf("got span index %d, want %d\n", got, want)
+				}
+			}
+		}
+	}
+	// expand the bucket
+	b.resize(20)
+	if b.size() != 5 {
+		t.Fatalf("after resizing upwards: got bucket size %d, want 5\n", b.size())
+	}
+	for i := 0; i < 5; i++ {
+		want := uint64(6 + i)
+		got := b.span(i).SpanContext.TraceID.High
+		if got != want {
+			t.Errorf("after resizing upwards: got span index %d, want %d\n", got, want)
+		}
+	}
+	// shrink the bucket
+	b.resize(3)
+	if b.size() != 3 {
+		t.Fatalf("after resizing downwards: got bucket size %d, want 3\n", b.size())
+	}
+	for i := 0; i < 3; i++ {
+		want := uint64(8 + i)
+		got := b.span(i).SpanContext.TraceID.High
+		if got != want {
+			t.Errorf("after resizing downwards: got span index %d, want %d\n", got, want)
+		}
+	}
+}
+
 func remoteSpanContext() core.SpanContext {
 	return core.SpanContext{
 		TraceID:      tid,

@@ -49,7 +49,7 @@ type span struct {
 	links *evictedQueue
 
 	// spanStore is the spanStore this span belongs to, if any, otherwise it is nil.
-	//*spanStore
+	*spanStore
 	endOnce sync.Once
 
 	executionTracerTaskEnd func()          // ends the execution tracer span
@@ -120,13 +120,12 @@ func (s *span) Finish() {
 	s.endOnce.Do(func() {
 		exp, _ := exporters.Load().(exportersMap)
 		mustExport := s.spanContext.IsSampled() && len(exp) > 0
-		//if s.spanStore != nil || mustExport {
-		if mustExport {
+		if s.spanStore != nil || mustExport {
 			sd := s.makeSpanData()
 			sd.EndTime = internal.MonotonicEndTime(sd.StartTime)
-			//if s.spanStore != nil {
-			//	s.spanStore.finished(s, sd)
-			//}
+			if s.spanStore != nil {
+				s.spanStore.finished(s, sd)
+			}
 			if mustExport {
 				for e := range exp {
 					e.ExportSpan(sd)
@@ -254,9 +253,7 @@ func startSpanInternal(name string, parent core.SpanContext, remoteParent bool, 
 		}
 	}
 
-	// TODO: [rghetia] restore when spanstore is added.
-	// if !internal.LocalSpanStoreEnabled && !span.spanContext.IsSampled() && !o.RecordEvent {
-	if !span.spanContext.IsSampled() && !o.RecordEvent {
+	if !internal.LocalSpanStoreEnabled && !span.spanContext.IsSampled() && !o.RecordEvent {
 		return span
 	}
 
@@ -275,14 +272,13 @@ func startSpanInternal(name string, parent core.SpanContext, remoteParent bool, 
 	if !noParent {
 		span.data.ParentSpanID = parent.SpanID
 	}
-	// TODO: [rghetia] restore when spanstore is added.
-	//if internal.LocalSpanStoreEnabled {
-	//	ss := spanStoreForNameCreateIfNew(name)
-	//	if ss != nil {
-	//		span.spanStore = ss
-	//		ss.add(span)
-	//	}
-	//}
+	if internal.LocalSpanStoreEnabled {
+		ss := spanStoreForNameCreateIfNew(name)
+		if ss != nil {
+			span.spanStore = ss
+			ss.add(span)
+		}
+	}
 
 	return span
 }
